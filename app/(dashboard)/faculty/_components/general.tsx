@@ -2,7 +2,7 @@ import { Clock, FileText, Star, Users } from "lucide-react";
 
 export const GeneralFacultyInfo = () => {
   return (
-    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 p-4">
+    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
       {/* Teaching Hours Card */}
       <div className="bg-white rounded-lg shadow-md p-6 border border-gray-200">
         <div className="flex items-center justify-between">
