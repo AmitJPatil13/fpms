@@ -1,8 +1,9 @@
 "use client";
-import React from 'react';
+import React from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
+import { Label } from "@/components/ui/label";
 import {
   Select,
   SelectContent,
@@ -10,7 +11,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Label } from "@/components/ui/label";
 import {
   Table,
   TableBody,
@@ -20,16 +20,17 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Trash2 } from "lucide-react";
+import { getSession } from "redshield";
+import { toast } from "sonner";
 
-// Define enum for event types
 enum EventType {
-  SEMINAR = 'Seminar',
-  FDP = 'Faculty Development Program',
-  WORKSHOP = 'Workshop',
-  CONFERENCE = 'Conference',
-  TRAINING = 'Training Program',
-  CERTIFICATION = 'Certification Course',
-  MOOC = 'MOOC Course',
+  WORKSHOP = "Workshop",
+  CONFERENCE = "Conference",
+  SEMINAR = "Seminar",
+  TRAINING = "Training Program",
+  CERTIFICATION = "Certification",
+  COURSE = "Online Course",
+  OTHER = "Other",
 }
 
 type ProfessionalDevelopment = {
@@ -44,32 +45,138 @@ type ProfessionalDevelopment = {
 };
 
 const ProfessionalDevelopmentPage = () => {
-  // Example data - replace with actual data fetching
-  const [events, setEvents] = React.useState<ProfessionalDevelopment[]>([
-    {
-      id: 1,
-      academicYear: "2023-2024",
-      eventType: EventType.FDP,
-      eventTitle: "Advanced Machine Learning Techniques",
-      durationDays: 5,
-      dateFrom: "2024-01-15",
-      dateTo: "2024-01-19",
-      organizedBy: "IIT Bombay",
-    },
-  ]);
+  const [activities, setActivities] = React.useState<ProfessionalDevelopment[]>([]);
+  const [loading, setLoading] = React.useState(false);
+  const [session, setSession] = React.useState<any>(null);
+  const [formData, setFormData] = React.useState({
+    academicYear: "",
+    eventType: "",
+    eventTitle: "",
+    durationDays: 1,
+    dateFrom: "",
+    dateTo: "",
+    organizedBy: "",
+  });
 
-  const handleSubmit = (e: React.FormEvent) => {
+  // Fetch activities on component mount
+  React.useEffect(() => {
+    const initializeData = async () => {
+      const currentSession = await getSession();
+      setSession(currentSession);
+      
+      if (currentSession?.status && currentSession?.data?.email) {
+        try {
+          const response = await fetch("/api/professional-development");
+          const data = await response.json();
+          if (data.success) {
+            setActivities(data.activities);
+          }
+        } catch (error) {
+          console.error("Failed to fetch professional development activities:", error);
+          toast.error("Failed to load activities");
+        }
+      }
+    };
+
+    initializeData();
+  }, []);
+
+  const handleInputChange = (
+    e: React.ChangeEvent<HTMLInputElement>
+  ) => {
+    const { name, value } = e.target;
+    setFormData((prev) => ({
+      ...prev,
+      [name]: name === "durationDays" ? parseInt(value) || 1 : value,
+    }));
+  };
+
+  const handleSelectChange = (name: string, value: string) => {
+    setFormData((prev) => ({
+      ...prev,
+      [name]: value,
+    }));
+  };
+
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    // Handle form submission
+    if (!session?.status || !session?.data?.email) {
+      toast.error("Please sign in to add activities");
+      return;
+    }
+
+    // Validate dates
+    const fromDate = new Date(formData.dateFrom);
+    const toDate = new Date(formData.dateTo);
+    if (toDate < fromDate) {
+      toast.error("End date cannot be earlier than start date");
+      return;
+    }
+
+    // Validate duration
+    if (formData.durationDays <= 0) {
+      toast.error("Duration must be positive");
+      return;
+    }
+
+    setLoading(true);
+    try {
+      const response = await fetch("/api/professional-development", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          userEmail: session.data.email,
+          ...formData,
+        }),
+      });
+
+      const data = await response.json();
+      if (data.success) {
+        setActivities((prev) => [...prev, data.activity]);
+        setFormData({
+          academicYear: "",
+          eventType: "",
+          eventTitle: "",
+          durationDays: 1,
+          dateFrom: "",
+          dateTo: "",
+          organizedBy: "",
+        });
+        toast.success("Activity added successfully");
+      } else {
+        throw new Error(data.message || "Failed to add activity");
+      }
+    } catch (error) {
+      console.error("Failed to add activity:", error);
+      toast.error("Failed to add activity");
+    } finally {
+      setLoading(false);
+    }
   };
 
   const handleDelete = async (id: number) => {
+    if (!session?.status || !session?.data?.email) {
+      toast.error("Please sign in to delete activities");
+      return;
+    }
+
     try {
-      // Add API call to delete the record
-      // await deleteProfessionalDevelopment(id);
-      setEvents(events.filter(event => event.id !== id));
+      const response = await fetch(`/api/professional-development/${id}`, {
+        method: "DELETE",
+      });
+
+      const data = await response.json();
+      if (data.success) {
+        setActivities(activities.filter((activity) => activity.id !== id));
+        toast.success("Activity deleted successfully");
+      } else {
+        throw new Error(data.message || "Failed to delete activity");
+      }
     } catch (error) {
-      console.error('Failed to delete event:', error);
+      console.error("Failed to delete activity:", error);
+      toast.error("Failed to delete activity");
     }
   };
 
@@ -77,25 +184,32 @@ const ProfessionalDevelopmentPage = () => {
     <div className="container mx-auto p-6 space-y-6">
       <Card>
         <CardHeader>
-          <CardTitle>Add New Professional Development Activity</CardTitle>
+          <CardTitle>Add Professional Development Activity</CardTitle>
         </CardHeader>
         <CardContent>
           <form onSubmit={handleSubmit} className="space-y-4">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div className="space-y-2">
-                <Label htmlFor="academic_year">Academic Year</Label>
+                <Label htmlFor="academicYear">Academic Year</Label>
                 <Input
                   type="text"
-                  id="academic_year"
-                  name="academic_year"
-                  placeholder="e.g., 2023-2024"
+                  id="academicYear"
+                  name="academicYear"
+                  value={formData.academicYear}
+                  onChange={handleInputChange}
+                  placeholder="e.g., 2023-24"
                   required
                 />
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="event_type">Event Type</Label>
-                <Select name="event_type" required>
+                <Label htmlFor="eventType">Event Type</Label>
+                <Select
+                  name="eventType"
+                  value={formData.eventType}
+                  onValueChange={(value) => handleSelectChange("eventType", value)}
+                  required
+                >
                   <SelectTrigger>
                     <SelectValue placeholder="Select event type" />
                   </SelectTrigger>
@@ -109,67 +223,79 @@ const ProfessionalDevelopmentPage = () => {
                 </Select>
               </div>
 
-              <div className="space-y-2 md:col-span-2">
-                <Label htmlFor="event_title">Event Title</Label>
+              <div className="space-y-2">
+                <Label htmlFor="eventTitle">Event Title</Label>
                 <Input
                   type="text"
-                  id="event_title"
-                  name="event_title"
+                  id="eventTitle"
+                  name="eventTitle"
+                  value={formData.eventTitle}
+                  onChange={handleInputChange}
                   placeholder="Enter event title"
                   required
                 />
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="date_from">Start Date</Label>
-                <Input
-                  type="date"
-                  id="date_from"
-                  name="date_from"
-                  required
-                />
-              </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="date_to">End Date</Label>
-                <Input
-                  type="date"
-                  id="date_to"
-                  name="date_to"
-                  required
-                />
-              </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="duration_days">Duration (Days)</Label>
-                <Input
-                  type="number"
-                  id="duration_days"
-                  name="duration_days"
-                  min="1"
-                  placeholder="Number of days"
-                  required
-                />
-              </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="organized_by">Organized By</Label>
+                <Label htmlFor="organizedBy">Organized By</Label>
                 <Input
                   type="text"
-                  id="organized_by"
-                  name="organized_by"
-                  placeholder="Institute/University name"
+                  id="organizedBy"
+                  name="organizedBy"
+                  value={formData.organizedBy}
+                  onChange={handleInputChange}
+                  placeholder="Enter organizer name"
+                  required
+                />
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="dateFrom">Start Date</Label>
+                <Input
+                  type="date"
+                  id="dateFrom"
+                  name="dateFrom"
+                  value={formData.dateFrom}
+                  onChange={handleInputChange}
+                  required
+                />
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="dateTo">End Date</Label>
+                <Input
+                  type="date"
+                  id="dateTo"
+                  name="dateTo"
+                  value={formData.dateTo}
+                  onChange={handleInputChange}
+                  min={formData.dateFrom}
+                  required
+                />
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="durationDays">Duration (Days)</Label>
+                <Input
+                  type="number"
+                  id="durationDays"
+                  name="durationDays"
+                  value={formData.durationDays}
+                  onChange={handleInputChange}
+                  min="1"
+                  placeholder="Enter duration in days"
                   required
                 />
               </div>
             </div>
 
             <div className="flex justify-end pt-4">
-              <Button 
+              <Button
                 type="submit"
                 className="!bg-blue-500 text-white hover:!bg-blue-600"
+                disabled={loading}
               >
-                Save Event
+                {loading ? "Saving..." : "Add Activity"}
               </Button>
             </div>
           </form>
@@ -186,30 +312,33 @@ const ProfessionalDevelopmentPage = () => {
               <TableHeader>
                 <TableRow>
                   <TableHead>Academic Year</TableHead>
-                  <TableHead>Event Type</TableHead>
                   <TableHead>Event Title</TableHead>
-                  <TableHead>Duration</TableHead>
-                  <TableHead>Date</TableHead>
+                  <TableHead>Event Type</TableHead>
                   <TableHead>Organized By</TableHead>
+                  <TableHead>Duration</TableHead>
                   <TableHead className="w-[100px]">Actions</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {events.map((event) => (
-                  <TableRow key={event.id}>
-                    <TableCell>{event.academicYear}</TableCell>
-                    <TableCell>{event.eventType}</TableCell>
-                    <TableCell>{event.eventTitle}</TableCell>
-                    <TableCell>{event.durationDays} days</TableCell>
-                    <TableCell>
-                      {new Date(event.dateFrom).toLocaleDateString()} - {new Date(event.dateTo).toLocaleDateString()}
+                {activities.map((activity) => (
+                  <TableRow key={activity.id}>
+                    <TableCell>{activity.academicYear}</TableCell>
+                    <TableCell className="font-medium">
+                      {activity.eventTitle}
                     </TableCell>
-                    <TableCell>{event.organizedBy}</TableCell>
+                    <TableCell>{activity.eventType}</TableCell>
+                    <TableCell>{activity.organizedBy}</TableCell>
+                    <TableCell>
+                      {activity.durationDays} day{activity.durationDays > 1 ? 's' : ''} 
+                      <span className="text-gray-500 text-sm ml-2">
+                        ({new Date(activity.dateFrom).toLocaleDateString()} - {new Date(activity.dateTo).toLocaleDateString()})
+                      </span>
+                    </TableCell>
                     <TableCell>
                       <Button
                         variant="destructive"
                         size="icon"
-                        onClick={() => handleDelete(event.id)}
+                        onClick={() => handleDelete(activity.id)}
                         className="h-8 w-8"
                       >
                         <Trash2 className="h-4 w-4" />
@@ -217,14 +346,6 @@ const ProfessionalDevelopmentPage = () => {
                     </TableCell>
                   </TableRow>
                 ))}
-                {/* Summary row */}
-                <TableRow className="font-medium">
-                  <TableCell colSpan={3}>Total Days</TableCell>
-                  <TableCell>
-                    {events.reduce((sum, event) => sum + event.durationDays, 0)} days
-                  </TableCell>
-                  <TableCell colSpan={3}></TableCell>
-                </TableRow>
               </TableBody>
             </Table>
           </div>

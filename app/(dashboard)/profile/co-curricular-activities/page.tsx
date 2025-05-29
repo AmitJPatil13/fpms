@@ -1,8 +1,9 @@
 "use client";
-import React from 'react';
+import React from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
+import { Label } from "@/components/ui/label";
 import {
   Select,
   SelectContent,
@@ -10,7 +11,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Label } from "@/components/ui/label";
 import {
   Table,
   TableBody,
@@ -20,23 +20,26 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Trash2 } from "lucide-react";
+import { getSession } from "redshield";
+import { toast } from "sonner";
 
-// Define enums for activity types and levels
 enum ActivityType {
-  NSS = 'NSS',
-  CLUB_MENTOR = 'Club Mentor',
-  INDUSTRIAL_VISIT = 'Industrial Visit',
-  SPORTS = 'Sports Coordinator',
-  CULTURAL = 'Cultural Coordinator',
-  TECHNICAL_CLUB = 'Technical Club',
-  PLACEMENT_COORDINATOR = 'Placement Coordinator',
+  CLUB = "Club/Society",
+  SPORTS = "Sports/Games",
+  CULTURAL = "Cultural Event",
+  SOCIAL = "Social Service",
+  TECHNICAL = "Technical Event",
+  COMMITTEE = "Committee Work",
+  OTHER = "Other",
 }
 
-enum ActivityLevel {
-  COLLEGE = 'College',
-  STATE = 'State',
-  NATIONAL = 'National',
-  INTERNATIONAL = 'International',
+enum Level {
+  DEPARTMENT = "Department",
+  COLLEGE = "College",
+  UNIVERSITY = "University",
+  STATE = "State",
+  NATIONAL = "National",
+  INTERNATIONAL = "International",
 }
 
 type CoCurricularActivity = {
@@ -44,34 +47,128 @@ type CoCurricularActivity = {
   academicYear: string;
   activityType: ActivityType;
   hoursSpent: number;
-  level: ActivityLevel;
+  level: Level;
 };
 
 const CoCurricularActivitiesPage = () => {
-  // Example data - replace with actual data fetching
-  const [activities, setActivities] = React.useState<CoCurricularActivity[]>([
-    {
-      id: 1,
-      academicYear: "2023-2024",
-      activityType: ActivityType.NSS,
-      hoursSpent: 20,
-      level: ActivityLevel.COLLEGE,
-    },
-    // Add more sample data as needed
-  ]);
+  const [activities, setActivities] = React.useState<CoCurricularActivity[]>([]);
+  const [loading, setLoading] = React.useState(false);
+  const [session, setSession] = React.useState<any>(null);
+  const [formData, setFormData] = React.useState({
+    academicYear: "",
+    activityType: "",
+    hoursSpent: 0,
+    level: "",
+  });
 
-  const handleSubmit = (e: React.FormEvent) => {
+  // Fetch activities on component mount
+  React.useEffect(() => {
+    const initializeData = async () => {
+      const currentSession = await getSession();
+      setSession(currentSession);
+      
+      if (currentSession?.status && currentSession?.data?.email) {
+        try {
+          const response = await fetch("/api/co-curricular-activities");
+          const data = await response.json();
+          if (data.success) {
+            setActivities(data.activities);
+          }
+        } catch (error) {
+          console.error("Failed to fetch co-curricular activities:", error);
+          toast.error("Failed to load activities");
+        }
+      }
+    };
+
+    initializeData();
+  }, []);
+
+  const handleInputChange = (
+    e: React.ChangeEvent<HTMLInputElement>
+  ) => {
+    const { name, value } = e.target;
+    setFormData((prev) => ({
+      ...prev,
+      [name]: name === "hoursSpent" ? parseInt(value) || 0 : value,
+    }));
+  };
+
+  const handleSelectChange = (name: string, value: string) => {
+    setFormData((prev) => ({
+      ...prev,
+      [name]: value,
+    }));
+  };
+
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    // Handle form submission
+    if (!session?.status || !session?.data?.email) {
+      toast.error("Please sign in to add activities");
+      return;
+    }
+
+    // Validate hours spent
+    if (formData.hoursSpent < 0) {
+      toast.error("Hours spent cannot be negative");
+      return;
+    }
+
+    setLoading(true);
+    try {
+      const response = await fetch("/api/co-curricular-activities", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          userEmail: session.data.email,
+          ...formData,
+        }),
+      });
+
+      const data = await response.json();
+      if (data.success) {
+        setActivities((prev) => [...prev, data.activity]);
+        setFormData({
+          academicYear: "",
+          activityType: "",
+          hoursSpent: 0,
+          level: "",
+        });
+        toast.success("Activity added successfully");
+      } else {
+        throw new Error(data.message || "Failed to add activity");
+      }
+    } catch (error) {
+      console.error("Failed to add activity:", error);
+      toast.error("Failed to add activity");
+    } finally {
+      setLoading(false);
+    }
   };
 
   const handleDelete = async (id: number) => {
+    if (!session?.status || !session?.data?.email) {
+      toast.error("Please sign in to delete activities");
+      return;
+    }
+
     try {
-      // Add API call to delete the record
-      // await deleteCoCurricularActivity(id);
-      setActivities(activities.filter(activity => activity.id !== id));
+      const response = await fetch(`/api/co-curricular-activities/${id}`, {
+        method: "DELETE",
+      });
+
+      const data = await response.json();
+      if (data.success) {
+        setActivities(activities.filter((activity) => activity.id !== id));
+        toast.success("Activity deleted successfully");
+      } else {
+        throw new Error(data.message || "Failed to delete activity");
+      }
     } catch (error) {
-      console.error('Failed to delete activity:', error);
+      console.error("Failed to delete activity:", error);
+      toast.error("Failed to delete activity");
     }
   };
 
@@ -79,25 +176,32 @@ const CoCurricularActivitiesPage = () => {
     <div className="container mx-auto p-6 space-y-6">
       <Card>
         <CardHeader>
-          <CardTitle>Add New Co-curricular Activity</CardTitle>
+          <CardTitle>Add Co-curricular Activity</CardTitle>
         </CardHeader>
         <CardContent>
           <form onSubmit={handleSubmit} className="space-y-4">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div className="space-y-2">
-                <Label htmlFor="academic_year">Academic Year</Label>
+                <Label htmlFor="academicYear">Academic Year</Label>
                 <Input
                   type="text"
-                  id="academic_year"
-                  name="academic_year"
-                  placeholder="e.g., 2023-2024"
+                  id="academicYear"
+                  name="academicYear"
+                  value={formData.academicYear}
+                  onChange={handleInputChange}
+                  placeholder="e.g., 2023-24"
                   required
                 />
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="activity_type">Activity Type</Label>
-                <Select name="activity_type" required>
+                <Label htmlFor="activityType">Activity Type</Label>
+                <Select
+                  name="activityType"
+                  value={formData.activityType}
+                  onValueChange={(value) => handleSelectChange("activityType", value)}
+                  required
+                >
                   <SelectTrigger>
                     <SelectValue placeholder="Select activity type" />
                   </SelectTrigger>
@@ -112,25 +216,18 @@ const CoCurricularActivitiesPage = () => {
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="hours_spent">Hours Spent</Label>
-                <Input
-                  type="number"
-                  id="hours_spent"
-                  name="hours_spent"
-                  min="0"
-                  placeholder="Enter total hours"
+                <Label htmlFor="level">Level</Label>
+                <Select
+                  name="level"
+                  value={formData.level}
+                  onValueChange={(value) => handleSelectChange("level", value)}
                   required
-                />
-              </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="level">Activity Level</Label>
-                <Select name="level" required>
+                >
                   <SelectTrigger>
-                    <SelectValue placeholder="Select activity level" />
+                    <SelectValue placeholder="Select level" />
                   </SelectTrigger>
                   <SelectContent>
-                    {Object.values(ActivityLevel).map((level) => (
+                    {Object.values(Level).map((level) => (
                       <SelectItem key={level} value={level}>
                         {level}
                       </SelectItem>
@@ -138,14 +235,29 @@ const CoCurricularActivitiesPage = () => {
                   </SelectContent>
                 </Select>
               </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="hoursSpent">Hours Spent</Label>
+                <Input
+                  type="number"
+                  id="hoursSpent"
+                  name="hoursSpent"
+                  value={formData.hoursSpent}
+                  onChange={handleInputChange}
+                  min="0"
+                  placeholder="Enter hours spent"
+                  required
+                />
+              </div>
             </div>
 
             <div className="flex justify-end pt-4">
-              <Button 
+              <Button
                 type="submit"
                 className="!bg-blue-500 text-white hover:!bg-blue-600"
+                disabled={loading}
               >
-                Save Activity
+                {loading ? "Saving..." : "Add Activity"}
               </Button>
             </div>
           </form>
@@ -164,7 +276,7 @@ const CoCurricularActivitiesPage = () => {
                   <TableHead>Academic Year</TableHead>
                   <TableHead>Activity Type</TableHead>
                   <TableHead>Level</TableHead>
-                  <TableHead className="text-right">Hours Spent</TableHead>
+                  <TableHead>Hours Spent</TableHead>
                   <TableHead className="w-[100px]">Actions</TableHead>
                 </TableRow>
               </TableHeader>
@@ -174,7 +286,7 @@ const CoCurricularActivitiesPage = () => {
                     <TableCell>{activity.academicYear}</TableCell>
                     <TableCell>{activity.activityType}</TableCell>
                     <TableCell>{activity.level}</TableCell>
-                    <TableCell className="text-right">{activity.hoursSpent}</TableCell>
+                    <TableCell>{activity.hoursSpent}</TableCell>
                     <TableCell>
                       <Button
                         variant="destructive"
@@ -187,14 +299,6 @@ const CoCurricularActivitiesPage = () => {
                     </TableCell>
                   </TableRow>
                 ))}
-                {/* Summary row */}
-                <TableRow className="font-medium">
-                  <TableCell colSpan={3}>Total Hours</TableCell>
-                  <TableCell className="text-right">
-                    {activities.reduce((sum, act) => sum + act.hoursSpent, 0)}
-                  </TableCell>
-                  <TableCell></TableCell>
-                </TableRow>
               </TableBody>
             </Table>
           </div>

@@ -1,15 +1,8 @@
 "use client";
-import React from 'react';
+import React from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import { Label } from "@/components/ui/label";
 import {
   Table,
@@ -20,8 +13,9 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Trash2 } from "lucide-react";
+import { getSession } from "redshield";
+import { toast } from "sonner";
 
-// Example type for teaching activity record
 type TeachingActivity = {
   id: number;
   academicYear: string;
@@ -33,129 +27,220 @@ type TeachingActivity = {
 };
 
 const TeachingActivitiesPage = () => {
-  // Example data - replace with actual data fetching
-  const [activities, setActivities] = React.useState<TeachingActivity[]>([
-    {
-      id: 1,
-      academicYear: "2023-2024",
-      subjectName: "Data Structures",
-      lectureHours: 30,
-      tutorialHours: 15,
-      practicalHours: 30,
-      extraHours: 5,
-    },
-    {
-      id: 2,
-      academicYear: "2023-2024",
-      subjectName: "Database Management",
-      lectureHours: 45,
-      tutorialHours: 15,
-      practicalHours: 30,
-      extraHours: 0,
-    },
-    // Add more sample data as needed
-  ]);
+  const [activities, setActivities] = React.useState<TeachingActivity[]>([]);
+  const [loading, setLoading] = React.useState(false);
+  const [session, setSession] = React.useState<any>(null);
+  const [formData, setFormData] = React.useState({
+    academicYear: "",
+    subjectName: "",
+    lectureHours: 0,
+    tutorialHours: 0,
+    practicalHours: 0,
+    extraHours: 0,
+  });
 
-  const handleSubmit = (e: React.FormEvent) => {
+  // Fetch teaching activities on component mount
+  React.useEffect(() => {
+    const initializeData = async () => {
+      const currentSession = await getSession();
+      setSession(currentSession);
+      
+      if (currentSession?.status && currentSession?.data?.email) {
+        try {
+          const response = await fetch("/api/teaching-activities");
+          const data = await response.json();
+          if (data.success) {
+            setActivities(data.activities);
+          }
+        } catch (error) {
+          console.error("Failed to fetch teaching activities:", error);
+          toast.error("Failed to load teaching activities");
+        }
+      }
+    };
+
+    initializeData();
+  }, []);
+
+  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const { name, value } = e.target;
+    setFormData((prev) => ({
+      ...prev,
+      [name]: name.includes("Hours") ? parseInt(value) || 0 : value,
+    }));
+  };
+
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    // Handle form submission
+    if (!session?.status || !session?.data?.email) {
+      toast.error("Please sign in to add teaching activities");
+      return;
+    }
+
+    setLoading(true);
+    try {
+      const response = await fetch("/api/teaching-activities", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          userEmail: session.data.email,
+          ...formData,
+        }),
+      });
+
+      const data = await response.json();
+      if (data.success) {
+        setActivities((prev) => [...prev, data.activity]);
+        setFormData({
+          academicYear: "",
+          subjectName: "",
+          lectureHours: 0,
+          tutorialHours: 0,
+          practicalHours: 0,
+          extraHours: 0,
+        });
+        toast.success("Teaching activity added successfully");
+      } else {
+        throw new Error(data.message || "Failed to add teaching activity");
+      }
+    } catch (error) {
+      console.error("Failed to add teaching activity:", error);
+      toast.error("Failed to add teaching activity");
+    } finally {
+      setLoading(false);
+    }
   };
 
   const handleDelete = async (id: number) => {
-    try {
-      // Add API call to delete the record
-      // await deleteTeachingActivity(id);
-      setActivities(activities.filter(activity => activity.id !== id));
-    } catch (error) {
-      console.error('Failed to delete teaching activity:', error);
+    if (!session?.status || !session?.data?.email) {
+      toast.error("Please sign in to delete teaching activities");
+      return;
     }
+
+    try {
+      const response = await fetch(`/api/teaching-activities/${id}`, {
+        method: "DELETE",
+      });
+
+      const data = await response.json();
+      if (data.success) {
+        setActivities(activities.filter((activity) => activity.id !== id));
+        toast.success("Teaching activity deleted successfully");
+      } else {
+        throw new Error(data.message || "Failed to delete teaching activity");
+      }
+    } catch (error) {
+      console.error("Failed to delete teaching activity:", error);
+      toast.error("Failed to delete teaching activity");
+    }
+  };
+
+  const calculateTotalHours = (activity: TeachingActivity) => {
+    return (
+      activity.lectureHours +
+      activity.tutorialHours +
+      activity.practicalHours +
+      activity.extraHours
+    );
   };
 
   return (
     <div className="container mx-auto p-6 space-y-6">
       <Card>
         <CardHeader>
-          <CardTitle>Add New Teaching Activity</CardTitle>
+          <CardTitle>Add Teaching Activity</CardTitle>
         </CardHeader>
         <CardContent>
           <form onSubmit={handleSubmit} className="space-y-4">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div className="space-y-2">
-                <Label htmlFor="academic_year">Academic Year</Label>
+                <Label htmlFor="academicYear">Academic Year</Label>
                 <Input
                   type="text"
-                  id="academic_year"
-                  name="academic_year"
+                  id="academicYear"
+                  name="academicYear"
+                  value={formData.academicYear}
+                  onChange={handleInputChange}
                   placeholder="e.g., 2023-2024"
                   required
                 />
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="subject_name">Subject Name</Label>
+                <Label htmlFor="subjectName">Subject Name</Label>
                 <Input
                   type="text"
-                  id="subject_name"
-                  name="subject_name"
-                  placeholder="Enter subject name"
+                  id="subjectName"
+                  name="subjectName"
+                  value={formData.subjectName}
+                  onChange={handleInputChange}
+                  placeholder="e.g., Data Structures"
                   required
                 />
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="lecture_hours">Lecture Hours</Label>
+                <Label htmlFor="lectureHours">Lecture Hours</Label>
                 <Input
                   type="number"
-                  id="lecture_hours"
-                  name="lecture_hours"
+                  id="lectureHours"
+                  name="lectureHours"
+                  value={formData.lectureHours}
+                  onChange={handleInputChange}
                   min="0"
-                  placeholder="Enter lecture hours"
                   required
                 />
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="tutorial_hours">Tutorial Hours</Label>
+                <Label htmlFor="tutorialHours">Tutorial Hours</Label>
                 <Input
                   type="number"
-                  id="tutorial_hours"
-                  name="tutorial_hours"
+                  id="tutorialHours"
+                  name="tutorialHours"
+                  value={formData.tutorialHours}
+                  onChange={handleInputChange}
                   min="0"
-                  placeholder="Enter tutorial hours"
                   required
                 />
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="practical_hours">Practical Hours</Label>
+                <Label htmlFor="practicalHours">Practical Hours</Label>
                 <Input
                   type="number"
-                  id="practical_hours"
-                  name="practical_hours"
+                  id="practicalHours"
+                  name="practicalHours"
+                  value={formData.practicalHours}
+                  onChange={handleInputChange}
                   min="0"
-                  placeholder="Enter practical hours"
                   required
                 />
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="extra_hours">Extra Hours</Label>
+                <Label htmlFor="extraHours">Extra Hours</Label>
                 <Input
                   type="number"
-                  id="extra_hours"
-                  name="extra_hours"
+                  id="extraHours"
+                  name="extraHours"
+                  value={formData.extraHours}
+                  onChange={handleInputChange}
                   min="0"
-                  placeholder="Hours beyond UGC norms (if any)"
+                  required
                 />
               </div>
             </div>
 
             <div className="flex justify-end pt-4">
-              <Button 
+              <Button
                 type="submit"
                 className="!bg-blue-500 text-white hover:!bg-blue-600"
+                disabled={loading}
               >
-                Save Activity
+                {loading ? "Saving..." : "Add Activity"}
               </Button>
             </div>
           </form>
@@ -177,6 +262,7 @@ const TeachingActivitiesPage = () => {
                   <TableHead className="text-right">Tutorial Hours</TableHead>
                   <TableHead className="text-right">Practical Hours</TableHead>
                   <TableHead className="text-right">Extra Hours</TableHead>
+                  <TableHead className="text-right">Total Hours</TableHead>
                   <TableHead className="w-[100px]">Actions</TableHead>
                 </TableRow>
               </TableHeader>
@@ -185,10 +271,21 @@ const TeachingActivitiesPage = () => {
                   <TableRow key={activity.id}>
                     <TableCell>{activity.academicYear}</TableCell>
                     <TableCell>{activity.subjectName}</TableCell>
-                    <TableCell className="text-right">{activity.lectureHours}</TableCell>
-                    <TableCell className="text-right">{activity.tutorialHours}</TableCell>
-                    <TableCell className="text-right">{activity.practicalHours}</TableCell>
-                    <TableCell className="text-right">{activity.extraHours}</TableCell>
+                    <TableCell className="text-right">
+                      {activity.lectureHours}
+                    </TableCell>
+                    <TableCell className="text-right">
+                      {activity.tutorialHours}
+                    </TableCell>
+                    <TableCell className="text-right">
+                      {activity.practicalHours}
+                    </TableCell>
+                    <TableCell className="text-right">
+                      {activity.extraHours}
+                    </TableCell>
+                    <TableCell className="text-right font-medium">
+                      {calculateTotalHours(activity)}
+                    </TableCell>
                     <TableCell>
                       <Button
                         variant="destructive"
@@ -201,20 +298,38 @@ const TeachingActivitiesPage = () => {
                     </TableCell>
                   </TableRow>
                 ))}
-                {/* Add a summary row */}
+                {/* Summary row */}
                 <TableRow className="font-medium">
                   <TableCell colSpan={2}>Total Hours</TableCell>
                   <TableCell className="text-right">
-                    {activities.reduce((sum, act) => sum + act.lectureHours, 0)}
+                    {activities.reduce(
+                      (sum, activity) => sum + activity.lectureHours,
+                      0
+                    )}
                   </TableCell>
                   <TableCell className="text-right">
-                    {activities.reduce((sum, act) => sum + act.tutorialHours, 0)}
+                    {activities.reduce(
+                      (sum, activity) => sum + activity.tutorialHours,
+                      0
+                    )}
                   </TableCell>
                   <TableCell className="text-right">
-                    {activities.reduce((sum, act) => sum + act.practicalHours, 0)}
+                    {activities.reduce(
+                      (sum, activity) => sum + activity.practicalHours,
+                      0
+                    )}
                   </TableCell>
                   <TableCell className="text-right">
-                    {activities.reduce((sum, act) => sum + act.extraHours, 0)}
+                    {activities.reduce(
+                      (sum, activity) => sum + activity.extraHours,
+                      0
+                    )}
+                  </TableCell>
+                  <TableCell className="text-right">
+                    {activities.reduce(
+                      (sum, activity) => sum + calculateTotalHours(activity),
+                      0
+                    )}
                   </TableCell>
                   <TableCell></TableCell>
                 </TableRow>

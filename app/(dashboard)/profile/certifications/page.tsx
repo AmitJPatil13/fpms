@@ -1,8 +1,9 @@
 "use client";
-import React from "react";
+import React from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
+import { Label } from "@/components/ui/label";
 import {
   Select,
   SelectContent,
@@ -10,7 +11,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Label } from "@/components/ui/label";
 import {
   Table,
   TableBody,
@@ -19,107 +19,168 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-} from "@/components/ui/dialog";
-import { Trash2, Eye, Upload } from "lucide-react";
-
-enum CertificationType {
-  FDP = "Faculty Development Program",
-  ONLINE_COURSE = "Online Course",
-  WORKSHOP = "Workshop",
-  CERTIFICATION = "Professional Certification",
-}
+import { Trash2, Eye } from "lucide-react";
+import { getSession } from "redshield";
+import { toast } from "sonner";
+import { convertImageToBase64, validateImage } from './utils';
 
 type Certification = {
   id: number;
   certTitle: string;
-  issuingOrganization: string;
   domain: string;
-  certType: CertificationType;
+  issuingOrganization: string;
+  certType: string;
   dateIssued: string;
   durationHours: number;
-  certImg: string; // base64 string
+  certImg: string;
 };
 
 const CertificationsPage = () => {
-  // Example data - replace with actual data fetching
-  const [certifications, setCertifications] = React.useState<Certification[]>(
-    []
-  );
-  const [previewImage, setPreviewImage] = React.useState<string>("");
-  const [filters, setFilters] = React.useState({
+  const [certifications, setCertifications] = React.useState<Certification[]>([]);
+  const [loading, setLoading] = React.useState(false);
+  const [selectedImage, setSelectedImage] = React.useState<File | null>(null);
+  const [session, setSession] = React.useState<any>(null);
+  const [formData, setFormData] = React.useState({
+    certTitle: "",
     domain: "",
-    type: "",
-    organization: "",
+    issuingOrganization: "",
+    certType: "",
+    dateIssued: "",
+    durationHours: 0,
   });
 
-  const handleSubmit = (e: React.FormEvent) => {
+  // Fetch certifications on component mount
+  React.useEffect(() => {
+    const initializeData = async () => {
+      const currentSession = await getSession();
+      setSession(currentSession);
+      
+      if (currentSession?.status && currentSession?.data?.email) {
+        try {
+          const response = await fetch('/api/certifications');
+          const data = await response.json();
+          if (data.success) {
+            setCertifications(data.certifications);
+          }
+        } catch (error) {
+          console.error('Failed to fetch certifications:', error);
+          toast.error('Failed to load certifications');
+        }
+      }
+    };
+
+    initializeData();
+  }, []);
+
+  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const { name, value } = e.target;
+    setFormData(prev => ({
+      ...prev,
+      [name]: value
+    }));
+  };
+
+  const handleSelectChange = (name: string, value: string) => {
+    setFormData(prev => ({
+      ...prev,
+      [name]: value
+    }));
+  };
+
+  const handleImageChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files && e.target.files[0]) {
+      try {
+        const file = e.target.files[0];
+        validateImage(file);
+        setSelectedImage(file);
+      } catch (error) {
+        if (error instanceof Error) {
+          toast.error(error.message);
+        }
+        e.target.value = '';
+      }
+    }
+  };
+
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    // Handle form submission
+    if (!session?.status || !session?.data?.email) {
+      toast.error('Please sign in to add certifications');
+      return;
+    }
+
+    if (!selectedImage) {
+      toast.error('Please select a certificate image');
+      return;
+    }
+
+    setLoading(true);
+    try {
+      const base64Image = await convertImageToBase64(selectedImage);
+      
+      const response = await fetch('/api/certifications', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          userEmail: session.data.email,
+          ...formData,
+          certImg: base64Image,
+        }),
+      });
+
+      const data = await response.json();
+      if (data.success) {
+        setCertifications(prev => [...prev, data.certification]);
+        setFormData({
+          certTitle: "",
+          domain: "",
+          issuingOrganization: "",
+          certType: "",
+          dateIssued: "",
+          durationHours: 0,
+        });
+        setSelectedImage(null);
+        toast.success('Certification added successfully');
+      } else {
+        throw new Error(data.message || 'Failed to add certification');
+      }
+    } catch (error) {
+      console.error('Failed to add certification:', error);
+      toast.error('Failed to add certification');
+    } finally {
+      setLoading(false);
+    }
   };
 
   const handleDelete = async (id: number) => {
+    if (!session?.status || !session?.data?.email) {
+      toast.error('Please sign in to delete certifications');
+      return;
+    }
+
     try {
-      // Add API call to delete the record
-      // await deleteCertification(id);
-      setCertifications(certifications.filter((cert) => cert.id !== id));
+      const response = await fetch(`/api/certifications/${id}`, {
+        method: 'DELETE',
+      });
+
+      const data = await response.json();
+      if (data.success) {
+        setCertifications(certifications.filter(cert => cert.id !== id));
+        toast.success('Certification deleted successfully');
+      } else {
+        throw new Error(data.message || 'Failed to delete certification');
+      }
     } catch (error) {
-      console.error("Failed to delete certification:", error);
+      console.error('Failed to delete certification:', error);
+      toast.error('Failed to delete certification');
     }
   };
 
-  const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file) {
-      const reader = new FileReader();
-      reader.onloadend = () => {
-        setPreviewImage(reader.result as string);
-      };
-      reader.readAsDataURL(file);
-    }
+  const viewCertificate = (certImg: string) => {
+    window.open(certImg, '_blank');
   };
-
-  const compressImage = async (base64: string, maxSizeKB = 500) => {
-    return new Promise<string>((resolve) => {
-      const img = new Image();
-      img.src = base64;
-      img.onload = () => {
-        const canvas = document.createElement("canvas");
-        const ctx = canvas.getContext("2d")!;
-
-        let width = img.width;
-        let height = img.height;
-
-        // Calculate new dimensions
-        if (width > 1200) {
-          height = (height * 1200) / width;
-          width = 1200;
-        }
-
-        canvas.width = width;
-        canvas.height = height;
-
-        ctx.drawImage(img, 0, 0, width, height);
-        resolve(canvas.toDataURL("image/jpeg", 0.7));
-      };
-    });
-  };
-
-  const filteredCertifications = certifications.filter((cert) => {
-    if (filters.domain && !cert.domain.includes(filters.domain)) return false;
-    if (filters.type && cert.certType !== filters.type) return false;
-    if (
-      filters.organization &&
-      !cert.issuingOrganization.includes(filters.organization)
-    )
-      return false;
-    return true;
-  });
 
   return (
     <div className="container mx-auto p-6 space-y-6">
@@ -130,26 +191,15 @@ const CertificationsPage = () => {
         <CardContent>
           <form onSubmit={handleSubmit} className="space-y-4">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div className="space-y-2 md:col-span-2">
-                <Label htmlFor="cert_title">Certification Title</Label>
-                <Input
-                  type="text"
-                  id="cert_title"
-                  name="cert_title"
-                  placeholder="Enter certification title"
-                  required
-                />
-              </div>
-
               <div className="space-y-2">
-                <Label htmlFor="issuing_organization">
-                  Issuing Organization
-                </Label>
+                <Label htmlFor="certTitle">Certificate Title</Label>
                 <Input
                   type="text"
-                  id="issuing_organization"
-                  name="issuing_organization"
-                  placeholder="e.g., NPTEL, Coursera"
+                  id="certTitle"
+                  name="certTitle"
+                  value={formData.certTitle}
+                  onChange={handleInputChange}
+                  placeholder="e.g., AWS Certified Solutions Architect"
                   required
                 />
               </div>
@@ -160,86 +210,95 @@ const CertificationsPage = () => {
                   type="text"
                   id="domain"
                   name="domain"
-                  placeholder="e.g., Python, AI, Research"
+                  value={formData.domain}
+                  onChange={handleInputChange}
+                  placeholder="e.g., Cloud Computing"
                   required
                 />
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="cert_type">Certification Type</Label>
-                <Select name="cert_type" required>
+                <Label htmlFor="issuingOrganization">Issuing Organization</Label>
+                <Input
+                  type="text"
+                  id="issuingOrganization"
+                  name="issuingOrganization"
+                  value={formData.issuingOrganization}
+                  onChange={handleInputChange}
+                  placeholder="e.g., Amazon Web Services"
+                  required
+                />
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="certType">Certification Type</Label>
+                <Select 
+                  name="certType"
+                  value={formData.certType}
+                  onValueChange={(value) => handleSelectChange('certType', value)}
+                  required
+                >
                   <SelectTrigger>
-                    <SelectValue placeholder="Select type" />
+                    <SelectValue placeholder="Select certification type" />
                   </SelectTrigger>
                   <SelectContent>
-                    {Object.values(CertificationType).map((type) => (
-                      <SelectItem key={type} value={type}>
-                        {type}
-                      </SelectItem>
-                    ))}
+                    <SelectItem value="Professional">Professional</SelectItem>
+                    <SelectItem value="Technical">Technical</SelectItem>
+                    <SelectItem value="Academic">Academic</SelectItem>
+                    <SelectItem value="Other">Other</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="date_issued">Date Issued</Label>
+                <Label htmlFor="dateIssued">Date Issued</Label>
                 <Input
                   type="date"
-                  id="date_issued"
-                  name="date_issued"
+                  id="dateIssued"
+                  name="dateIssued"
+                  value={formData.dateIssued}
+                  onChange={handleInputChange}
                   required
                 />
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="duration_hours">Duration (Hours)</Label>
+                <Label htmlFor="durationHours">Duration (Hours)</Label>
                 <Input
                   type="number"
-                  id="duration_hours"
-                  name="duration_hours"
-                  min="1"
-                  placeholder="Enter duration in hours"
+                  id="durationHours"
+                  name="durationHours"
+                  value={formData.durationHours}
+                  onChange={handleInputChange}
+                  min="0"
+                  placeholder="Duration in hours"
                   required
                 />
               </div>
 
-              <div className="space-y-2 md:col-span-2">
-                <Label htmlFor="cert_img">Certificate Image</Label>
-                <div className="flex items-center gap-4">
-                  <Input
-                    type="file"
-                    id="cert_img"
-                    name="cert_img"
-                    accept="image/*"
-                    className="hidden"
-                    onChange={handleImageUpload}
-                    required
-                  />
-                  <Button
-                    type="button"
-                    variant="outline"
-                    onClick={() => document.getElementById("cert_img")?.click()}
-                  >
-                    <Upload className="h-4 w-4 mr-2" />
-                    Upload Certificate
-                  </Button>
-                  {previewImage && (
-                    <img
-                      src={previewImage}
-                      alt="Preview"
-                      className="h-20 w-20 object-cover rounded"
-                    />
-                  )}
-                </div>
+              <div className="space-y-2">
+                <Label htmlFor="certImg">Certificate Image</Label>
+                <Input
+                  type="file"
+                  id="certImg"
+                  name="certImg"
+                  accept="image/*"
+                  onChange={handleImageChange}
+                  required
+                />
+                <p className="text-sm text-gray-500">
+                  Max file size: 5MB. Supported formats: JPEG, PNG, GIF
+                </p>
               </div>
             </div>
 
             <div className="flex justify-end pt-4">
-              <Button
+              <Button 
                 type="submit"
                 className="!bg-blue-500 text-white hover:!bg-blue-600"
+                disabled={loading}
               >
-                Save Certification
+                {loading ? 'Saving...' : 'Save Certification'}
               </Button>
             </div>
           </form>
@@ -256,52 +315,33 @@ const CertificationsPage = () => {
               <TableHeader>
                 <TableRow>
                   <TableHead>Title</TableHead>
-                  <TableHead>Organization</TableHead>
                   <TableHead>Domain</TableHead>
+                  <TableHead>Organization</TableHead>
                   <TableHead>Type</TableHead>
-                  <TableHead>Date</TableHead>
-                  <TableHead className="text-right">Hours</TableHead>
-                  <TableHead className="w-[150px]">Actions</TableHead>
+                  <TableHead>Date Issued</TableHead>
+                  <TableHead className="text-right">Duration (Hours)</TableHead>
+                  <TableHead className="w-[100px]">Actions</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {filteredCertifications.map((cert) => (
+                {certifications.map((cert) => (
                   <TableRow key={cert.id}>
-                    <TableCell className="max-w-[200px] truncate">
-                      {cert.certTitle}
-                    </TableCell>
-                    <TableCell>{cert.issuingOrganization}</TableCell>
+                    <TableCell>{cert.certTitle}</TableCell>
                     <TableCell>{cert.domain}</TableCell>
+                    <TableCell>{cert.issuingOrganization}</TableCell>
                     <TableCell>{cert.certType}</TableCell>
+                    <TableCell>{new Date(cert.dateIssued).toLocaleDateString()}</TableCell>
+                    <TableCell className="text-right">{cert.durationHours}</TableCell>
                     <TableCell>
-                      {new Date(cert.dateIssued).toLocaleDateString()}
-                    </TableCell>
-                    <TableCell className="text-right">
-                      {cert.durationHours}
-                    </TableCell>
-                    <TableCell>
-                      <div className="flex items-center gap-2">
-                        <Dialog>
-                          <DialogTrigger asChild>
-                            <Button
-                              variant="outline"
-                              size="icon"
-                              className="h-8 w-8"
-                            >
-                              <Eye className="h-4 w-4" />
-                            </Button>
-                          </DialogTrigger>
-                          <DialogContent className="max-w-2xl">
-                            <DialogHeader>
-                              <DialogTitle>Certificate Preview</DialogTitle>
-                            </DialogHeader>
-                            <img
-                              src={cert.certImg}
-                              alt={cert.certTitle}
-                              className="w-full rounded"
-                            />
-                          </DialogContent>
-                        </Dialog>
+                      <div className="flex space-x-2">
+                        <Button
+                          variant="outline"
+                          size="icon"
+                          onClick={() => viewCertificate(cert.certImg)}
+                          className="h-8 w-8"
+                        >
+                          <Eye className="h-4 w-4" />
+                        </Button>
                         <Button
                           variant="destructive"
                           size="icon"
@@ -314,36 +354,8 @@ const CertificationsPage = () => {
                     </TableCell>
                   </TableRow>
                 ))}
-                {/* Summary row */}
-                <TableRow className="font-medium">
-                  <TableCell colSpan={5}>Total Hours</TableCell>
-                  <TableCell className="text-right">
-                    {certifications.reduce(
-                      (sum, cert) => sum + cert.durationHours,
-                      0
-                    )}
-                  </TableCell>
-                  <TableCell></TableCell>
-                </TableRow>
               </TableBody>
             </Table>
-
-            {/* Statistics Cards */}
-            <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mt-6">
-              {Object.values(CertificationType).map((type) => (
-                <Card key={type}>
-                  <CardContent className="pt-6">
-                    <div className="text-2xl font-bold">
-                      {
-                        certifications.filter((cert) => cert.certType === type)
-                          .length
-                      }
-                    </div>
-                    <div className="text-sm text-gray-500">{type}s</div>
-                  </CardContent>
-                </Card>
-              ))}
-            </div>
           </div>
         </CardContent>
       </Card>

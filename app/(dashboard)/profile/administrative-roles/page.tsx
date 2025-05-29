@@ -1,5 +1,5 @@
 "use client";
-import React from 'react';
+import React from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -20,19 +20,21 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Trash2 } from "lucide-react";
+import { getSession } from "redshield";
+import { toast } from "sonner";
 
 // Define enum for common administrative roles
 enum RoleTitle {
-  HOD = 'Head of Department',
-  CLASS_COORDINATOR = 'Class Coordinator',
-  EXAM_COORDINATOR = 'Exam Coordinator',
-  TIMETABLE_COORDINATOR = 'Timetable Coordinator',
-  PLACEMENT_COORDINATOR = 'Placement Coordinator',
-  RESEARCH_COORDINATOR = 'Research Coordinator',
-  ACADEMIC_COORDINATOR = 'Academic Coordinator',
-  LAB_INCHARGE = 'Laboratory In-charge',
-  DEPARTMENT_SECRETARY = 'Department Secretary',
-  COMMITTEE_MEMBER = 'Committee Member',
+  HOD = "Head of Department",
+  CLASS_COORDINATOR = "Class Coordinator",
+  EXAM_COORDINATOR = "Exam Coordinator",
+  TIMETABLE_COORDINATOR = "Timetable Coordinator",
+  PLACEMENT_COORDINATOR = "Placement Coordinator",
+  RESEARCH_COORDINATOR = "Research Coordinator",
+  ACADEMIC_COORDINATOR = "Academic Coordinator",
+  LAB_INCHARGE = "Laboratory In-charge",
+  DEPARTMENT_SECRETARY = "Department Secretary",
+  COMMITTEE_MEMBER = "Committee Member",
 }
 
 type AdministrativeRole = {
@@ -43,34 +45,114 @@ type AdministrativeRole = {
 };
 
 const AdministrativeRolesPage = () => {
-  // Example data - replace with actual data fetching
-  const [roles, setRoles] = React.useState<AdministrativeRole[]>([
-    {
-      id: 1,
-      academicYear: "2023-2024",
-      roleTitle: RoleTitle.CLASS_COORDINATOR,
-      hoursSpent: 120,
-    },
-    {
-      id: 2,
-      academicYear: "2023-2024",
-      roleTitle: RoleTitle.LAB_INCHARGE,
-      hoursSpent: 80,
-    },
-  ]);
+  const [roles, setRoles] = React.useState<AdministrativeRole[]>([]);
+  const [loading, setLoading] = React.useState(false);
+  const [formData, setFormData] = React.useState({
+    academicYear: "",
+    roleTitle: "",
+    hoursSpent: 0,
+  });
+  const [session, setSession] = React.useState<any>(null);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  // Fetch session and roles on component mount
+  React.useEffect(() => {
+    const initializeData = async () => {
+      const currentSession = await getSession();
+      setSession(currentSession);
+      
+      if (currentSession?.status && currentSession?.data?.email) {
+        try {
+          const response = await fetch("/api/administrative-roles");
+          const data = await response.json();
+          if (data.success) {
+            setRoles(data.roles);
+          }
+        } catch (error) {
+          console.error("Failed to fetch roles:", error);
+          toast.error("Failed to load administrative roles");
+        }
+      }
+    };
+
+    initializeData();
+  }, []);
+
+  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const { name, value } = e.target;
+    setFormData((prev) => ({
+      ...prev,
+      [name]: value,
+    }));
+  };
+
+  const handleSelectChange = (value: string) => {
+    setFormData((prev) => ({
+      ...prev,
+      roleTitle: value,
+    }));
+  };
+
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    // Handle form submission
+    if (!session?.status || !session?.data?.email) {
+      toast.error("Please sign in to add roles");
+      return;
+    }
+
+    setLoading(true);
+    try {
+      const response = await fetch("/api/administrative-roles", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          userEmail: session.data.email,
+          ...formData,
+        }),
+      });
+
+      const data = await response.json();
+      if (data.success) {
+        setRoles((prev) => [...prev, data.role]);
+        setFormData({
+          academicYear: "",
+          roleTitle: "",
+          hoursSpent: 0,
+        });
+        toast.success("Administrative role added successfully");
+      } else {
+        throw new Error(data.message || "Failed to add role");
+      }
+    } catch (error) {
+      console.error("Failed to add role:", error);
+      toast.error("Failed to add administrative role");
+    } finally {
+      setLoading(false);
+    }
   };
 
   const handleDelete = async (id: number) => {
+    if (!session?.status || !session?.data?.email) {
+      toast.error("Please sign in to delete roles");
+      return;
+    }
+
     try {
-      // Add API call to delete the record
-      // await deleteAdministrativeRole(id);
-      setRoles(roles.filter(role => role.id !== id));
+      const response = await fetch(`/api/administrative-roles/${id}`, {
+        method: "DELETE",
+      });
+
+      const data = await response.json();
+      if (data.success) {
+        setRoles(roles.filter((role) => role.id !== id));
+        toast.success("Role deleted successfully");
+      } else {
+        throw new Error(data.message || "Failed to delete role");
+      }
     } catch (error) {
-      console.error('Failed to delete role:', error);
+      console.error("Failed to delete role:", error);
+      toast.error("Failed to delete role");
     }
   };
 
@@ -84,19 +166,26 @@ const AdministrativeRolesPage = () => {
           <form onSubmit={handleSubmit} className="space-y-4">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div className="space-y-2">
-                <Label htmlFor="academic_year">Academic Year</Label>
+                <Label htmlFor="academicYear">Academic Year</Label>
                 <Input
                   type="text"
-                  id="academic_year"
-                  name="academic_year"
+                  id="academicYear"
+                  name="academicYear"
+                  value={formData.academicYear}
+                  onChange={handleInputChange}
                   placeholder="e.g., 2023-2024"
                   required
                 />
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="role_title">Role Title</Label>
-                <Select name="role_title" required>
+                <Label htmlFor="roleTitle">Role Title</Label>
+                <Select
+                  name="roleTitle"
+                  value={formData.roleTitle}
+                  onValueChange={handleSelectChange}
+                  required
+                >
                   <SelectTrigger>
                     <SelectValue placeholder="Select role title" />
                   </SelectTrigger>
@@ -111,11 +200,13 @@ const AdministrativeRolesPage = () => {
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="hours_spent">Hours Spent</Label>
+                <Label htmlFor="hoursSpent">Hours Spent</Label>
                 <Input
                   type="number"
-                  id="hours_spent"
-                  name="hours_spent"
+                  id="hoursSpent"
+                  name="hoursSpent"
+                  value={formData.hoursSpent}
+                  onChange={handleInputChange}
                   min="0"
                   placeholder="Estimated hours spent"
                   required
@@ -124,11 +215,12 @@ const AdministrativeRolesPage = () => {
             </div>
 
             <div className="flex justify-end pt-4">
-              <Button 
+              <Button
                 type="submit"
                 className="!bg-blue-500 text-white hover:!bg-blue-600"
+                disabled={loading}
               >
-                Save Role
+                {loading ? "Saving..." : "Save Role"}
               </Button>
             </div>
           </form>
@@ -155,7 +247,9 @@ const AdministrativeRolesPage = () => {
                   <TableRow key={role.id}>
                     <TableCell>{role.academicYear}</TableCell>
                     <TableCell>{role.roleTitle}</TableCell>
-                    <TableCell className="text-right">{role.hoursSpent}</TableCell>
+                    <TableCell className="text-right">
+                      {role.hoursSpent}
+                    </TableCell>
                     <TableCell>
                       <Button
                         variant="destructive"
@@ -185,4 +279,4 @@ const AdministrativeRolesPage = () => {
   );
 };
 
-export default AdministrativeRolesPage; 
+export default AdministrativeRolesPage;

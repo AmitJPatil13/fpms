@@ -1,8 +1,10 @@
 "use client";
-import React from 'react';
+import React from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
 import {
   Select,
   SelectContent,
@@ -10,7 +12,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Label } from "@/components/ui/label";
 import {
   Table,
   TableBody,
@@ -19,99 +20,173 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { Trash2, Trophy, Mic, Award } from "lucide-react";
+import { Trash2 } from "lucide-react";
+import { getSession } from "redshield";
+import { toast } from "sonner";
+
+enum AwardLevel {
+  INTERNATIONAL = "International",
+  NATIONAL = "National",
+  STATE = "State",
+  UNIVERSITY = "University",
+  INSTITUTE = "Institute",
+}
 
 enum EntryType {
-  AWARD = 'Award',
-  LECTURE = 'Lecture',
-  HONOR = 'Honor',
+  RESEARCH = "Research Excellence",
+  TEACHING = "Teaching Excellence",
+  INNOVATION = "Innovation",
+  LEADERSHIP = "Leadership",
+  SERVICE = "Service Excellence",
+  LIFETIME = "Lifetime Achievement",
+  OTHER = "Other",
 }
 
-enum RecognitionLevel {
-  COLLEGE = 'College',
-  STATE = 'State',
-  NATIONAL = 'National',
-  INTERNATIONAL = 'International',
-}
-
-type AwardEntry = {
+type Award = {
   id: number;
-  entryType: EntryType;
   title: string;
+  entryType: string;
+  level: string;
   date: string;
-  level: RecognitionLevel;
 };
 
 const AwardsPage = () => {
-  // Example data - replace with actual data fetching
-  const [entries, setEntries] = React.useState<AwardEntry[]>([
-    {
-      id: 1,
-      entryType: EntryType.AWARD,
-      title: "Best Teacher Award",
-      date: "2024-01-15",
-      level: RecognitionLevel.COLLEGE,
-    },
-  ]);
+  const [awards, setAwards] = React.useState<Award[]>([]);
+  const [loading, setLoading] = React.useState(false);
+  const [session, setSession] = React.useState<any>(null);
+  const [formData, setFormData] = React.useState({
+    title: "",
+    entryType: "",
+    level: "",
+    date: "",
+  });
 
-  const [selectedYear, setSelectedYear] = React.useState<string>('');
-  const [searchTerm, setSearchTerm] = React.useState('');
-
-  const yearOptions = Array.from(
-    new Set(entries.map(e => new Date(e.date).getFullYear()))
-  ).sort((a, b) => b - a);
-
-  const filteredEntries = selectedYear
-    ? entries.filter(e => new Date(e.date).getFullYear().toString() === selectedYear)
-    : entries;
-
-  const searchedEntries = entries.filter(entry =>
-    entry.title.toLowerCase().includes(searchTerm.toLowerCase())
-  );
-
-  const [sortConfig, setSortConfig] = React.useState<{
-    key: keyof AwardEntry;
-    direction: 'asc' | 'desc';
-  }>();
-
-  const sortedEntries = React.useMemo(() => {
-    if (!sortConfig) return entries;
-    
-    return [...entries].sort((a, b) => {
-      if (a[sortConfig.key] < b[sortConfig.key]) {
-        return sortConfig.direction === 'asc' ? -1 : 1;
+  // Fetch awards on component mount
+  React.useEffect(() => {
+    const initializeData = async () => {
+      const currentSession = await getSession();
+      setSession(currentSession);
+      
+      if (currentSession?.status && currentSession?.data?.email) {
+        try {
+          const response = await fetch("/api/awards");
+          const data = await response.json();
+          if (data.success) {
+            setAwards(data.awards);
+          }
+        } catch (error) {
+          console.error("Failed to fetch awards:", error);
+          toast.error("Failed to load awards");
+        }
       }
-      if (a[sortConfig.key] > b[sortConfig.key]) {
-        return sortConfig.direction === 'asc' ? 1 : -1;
-      }
-      return 0;
-    });
-  }, [entries, sortConfig]);
+    };
 
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    // Handle form submission
+    initializeData();
+  }, []);
+
+  const handleInputChange = (
+    e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>
+  ) => {
+    const { name, value } = e.target;
+    setFormData((prev) => ({
+      ...prev,
+      [name]: value,
+    }));
   };
 
-  const handleDelete = async (id: number) => {
+  const handleSelectChange = (name: string, value: string) => {
+    setFormData((prev) => ({
+      ...prev,
+      [name]: value,
+    }));
+  };
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!session?.status || !session?.data?.email) {
+      toast.error("Please sign in to add awards");
+      return;
+    }
+
+    // Validate string lengths
+    if (formData.title.length > 255) {
+      toast.error("Title too long (max 255 characters)");
+      return;
+    }
+
+    if (formData.entryType.length > 50) {
+      toast.error("Entry type too long (max 50 characters)");
+      return;
+    }
+
+    if (formData.level.length > 50) {
+      toast.error("Level too long (max 50 characters)");
+      return;
+    }
+
+    // Validate date
+    const awardDate = new Date(formData.date);
+    const currentDate = new Date();
+    if (awardDate > currentDate) {
+      toast.error("Award date cannot be in the future");
+      return;
+    }
+
+    setLoading(true);
     try {
-      // Add API call to delete the record
-      // await deleteEntry(id);
-      setEntries(entries.filter(entry => entry.id !== id));
+      const response = await fetch("/api/awards", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          userEmail: session.data.email,
+          ...formData,
+        }),
+      });
+
+      const data = await response.json();
+      if (data.success) {
+        setAwards((prev) => [...prev, data.award]);
+        setFormData({
+          title: "",
+          entryType: "",
+          level: "",
+          date: "",
+        });
+        toast.success("Award added successfully");
+      } else {
+        throw new Error(data.message || "Failed to add award");
+      }
     } catch (error) {
-      console.error('Failed to delete entry:', error);
+      console.error("Failed to add award:", error);
+      toast.error("Failed to add award");
+    } finally {
+      setLoading(false);
     }
   };
 
-  // Get icon based on entry type
-  const getEntryIcon = (type: EntryType) => {
-    switch (type) {
-      case EntryType.AWARD:
-        return <Trophy className="h-4 w-4" />;
-      case EntryType.LECTURE:
-        return <Mic className="h-4 w-4" />;
-      case EntryType.HONOR:
-        return <Award className="h-4 w-4" />;
+  const handleDelete = async (id: number) => {
+    if (!session?.status || !session?.data?.email) {
+      toast.error("Please sign in to delete awards");
+      return;
+    }
+
+    try {
+      const response = await fetch(`/api/awards/${id}`, {
+        method: "DELETE",
+      });
+
+      const data = await response.json();
+      if (data.success) {
+        setAwards(awards.filter((award) => award.id !== id));
+        toast.success("Award deleted successfully");
+      } else {
+        throw new Error(data.message || "Failed to delete award");
+      }
+    } catch (error) {
+      console.error("Failed to delete award:", error);
+      toast.error("Failed to delete award");
     }
   };
 
@@ -119,24 +194,40 @@ const AwardsPage = () => {
     <div className="container mx-auto p-6 space-y-6">
       <Card>
         <CardHeader>
-          <CardTitle>Add New Award/Lecture/Honor</CardTitle>
+          <CardTitle>Add Award</CardTitle>
         </CardHeader>
         <CardContent>
           <form onSubmit={handleSubmit} className="space-y-4">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div className="space-y-2">
-                <Label htmlFor="entry_type">Type</Label>
-                <Select name="entry_type" required>
+                <Label htmlFor="title">Award Title</Label>
+                <Input
+                  type="text"
+                  id="title"
+                  name="title"
+                  value={formData.title}
+                  onChange={handleInputChange}
+                  placeholder="Enter award title"
+                  maxLength={255}
+                  required
+                />
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="entryType">Entry Type</Label>
+                <Select
+                  name="entryType"
+                  value={formData.entryType}
+                  onValueChange={(value) => handleSelectChange("entryType", value)}
+                  required
+                >
                   <SelectTrigger>
                     <SelectValue placeholder="Select type" />
                   </SelectTrigger>
                   <SelectContent>
                     {Object.values(EntryType).map((type) => (
                       <SelectItem key={type} value={type}>
-                        <div className="flex items-center gap-2">
-                          {getEntryIcon(type)}
-                          {type}
-                        </div>
+                        {type}
                       </SelectItem>
                     ))}
                   </SelectContent>
@@ -144,13 +235,18 @@ const AwardsPage = () => {
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="level">Level</Label>
-                <Select name="level" required>
+                <Label htmlFor="level">Award Level</Label>
+                <Select
+                  name="level"
+                  value={formData.level}
+                  onValueChange={(value) => handleSelectChange("level", value)}
+                  required
+                >
                   <SelectTrigger>
                     <SelectValue placeholder="Select level" />
                   </SelectTrigger>
                   <SelectContent>
-                    {Object.values(RecognitionLevel).map((level) => (
+                    {Object.values(AwardLevel).map((level) => (
                       <SelectItem key={level} value={level}>
                         {level}
                       </SelectItem>
@@ -159,34 +255,27 @@ const AwardsPage = () => {
                 </Select>
               </div>
 
-              <div className="space-y-2 md:col-span-2">
-                <Label htmlFor="title">Title</Label>
-                <Input
-                  type="text"
-                  id="title"
-                  name="title"
-                  placeholder="Enter title of award/lecture/honor"
-                  required
-                />
-              </div>
-
               <div className="space-y-2">
-                <Label htmlFor="date">Date</Label>
+                <Label htmlFor="date">Award Date</Label>
                 <Input
                   type="date"
                   id="date"
                   name="date"
+                  value={formData.date}
+                  onChange={handleInputChange}
+                  max={new Date().toISOString().split('T')[0]}
                   required
                 />
               </div>
             </div>
 
             <div className="flex justify-end pt-4">
-              <Button 
+              <Button
                 type="submit"
                 className="!bg-blue-500 text-white hover:!bg-blue-600"
+                disabled={loading}
               >
-                Save Entry
+                {loading ? "Saving..." : "Add Award"}
               </Button>
             </div>
           </form>
@@ -195,53 +284,36 @@ const AwardsPage = () => {
 
       <Card>
         <CardHeader>
-          <CardTitle>Awards, Lectures & Honors</CardTitle>
+          <CardTitle>Awards List</CardTitle>
         </CardHeader>
         <CardContent>
           <div className="overflow-x-auto">
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>Type</TableHead>
                   <TableHead>Title</TableHead>
+                  <TableHead>Entry Type</TableHead>
                   <TableHead>Level</TableHead>
                   <TableHead>Date</TableHead>
                   <TableHead className="w-[100px]">Actions</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {filteredEntries.map((entry) => (
-                  <TableRow key={entry.id}>
-                    <TableCell>
-                      <div className="flex items-center gap-2">
-                        {getEntryIcon(entry.entryType)}
-                        {entry.entryType}
-                      </div>
+                {awards.map((award) => (
+                  <TableRow key={award.id}>
+                    <TableCell className="font-medium">
+                      {award.title}
                     </TableCell>
-                    <TableCell className="max-w-[300px] truncate">
-                      {entry.title}
-                    </TableCell>
+                    <TableCell>{award.entryType}</TableCell>
+                    <TableCell>{award.level}</TableCell>
                     <TableCell>
-                      <span className={`px-2 py-1 rounded-full text-xs ${
-                        entry.level === RecognitionLevel.INTERNATIONAL
-                          ? "bg-purple-100 text-purple-800"
-                          : entry.level === RecognitionLevel.NATIONAL
-                          ? "bg-blue-100 text-blue-800"
-                          : entry.level === RecognitionLevel.STATE
-                          ? "bg-green-100 text-green-800"
-                          : "bg-gray-100 text-gray-800"
-                      }`}>
-                        {entry.level}
-                      </span>
-                    </TableCell>
-                    <TableCell>
-                      {new Date(entry.date).toLocaleDateString()}
+                      {new Date(award.date).toLocaleDateString()}
                     </TableCell>
                     <TableCell>
                       <Button
                         variant="destructive"
                         size="icon"
-                        onClick={() => handleDelete(entry.id)}
+                        onClick={() => handleDelete(award.id)}
                         className="h-8 w-8"
                       >
                         <Trash2 className="h-4 w-4" />
@@ -251,27 +323,6 @@ const AwardsPage = () => {
                 ))}
               </TableBody>
             </Table>
-
-            {/* Statistics Cards */}
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mt-6">
-              {Object.values(EntryType).map((type) => (
-                <Card key={type}>
-                  <CardContent className="pt-6">
-                    <div className="flex items-center gap-2">
-                      {getEntryIcon(type)}
-                      <div>
-                        <div className="text-2xl font-bold">
-                          {entries.filter(e => e.entryType === type).length}
-                        </div>
-                        <div className="text-sm text-gray-500">
-                          Total {type}s
-                        </div>
-                      </div>
-                    </div>
-                  </CardContent>
-                </Card>
-              ))}
-            </div>
           </div>
         </CardContent>
       </Card>

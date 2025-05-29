@@ -1,8 +1,10 @@
 "use client";
-import React from 'react';
+import React from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
 import {
   Select,
   SelectContent,
@@ -10,7 +12,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Label } from "@/components/ui/label";
 import {
   Table,
   TableBody,
@@ -20,121 +21,205 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Trash2 } from "lucide-react";
+import { getSession } from "redshield";
+import { toast } from "sonner";
 
-enum DegreeType {
-  MPHIL = 'M.Phil',
-  PHD = 'Ph.D.',
+enum Degree {
+  PHD = "Ph.D.",
+  MTECH = "M.Tech.",
+  BTECH = "B.Tech.",
+  OTHER = "Other",
 }
 
-enum ThesisStatus {
-  AWARDED = 'Awarded',
-  SUBMITTED = 'Submitted',
-  ONGOING = 'Ongoing',
+enum GuidanceStatus {
+  ONGOING = "Ongoing",
+  COMPLETED = "Completed",
+  DISCONTINUED = "Discontinued",
 }
 
 type ResearchGuidance = {
   id: number;
   scholarName: string;
-  degree: DegreeType;
-  status: ThesisStatus;
+  degree: string;
+  status: string;
   year: number;
 };
 
 const ResearchGuidancePage = () => {
-  // Example data - replace with actual data fetching
-  const [guidances, setGuidances] = React.useState<ResearchGuidance[]>([
-    {
-      id: 1,
-      scholarName: "John Doe",
-      degree: DegreeType.PHD,
-      status: ThesisStatus.AWARDED,
-      year: 2023,
-    },
-  ]);
-
-  const currentYear = new Date().getFullYear();
-  const yearOptions = Array.from({ length: 10 }, (_, i) => currentYear - i);
-
-  const [filters, setFilters] = React.useState({
-    degree: '',
-    status: '',
-    year: '',
+  const [guidances, setGuidances] = React.useState<ResearchGuidance[]>([]);
+  const [loading, setLoading] = React.useState(false);
+  const [session, setSession] = React.useState<any>(null);
+  const [formData, setFormData] = React.useState({
+    scholarName: "",
+    degree: "",
+    status: "",
+    year: new Date().getFullYear(),
   });
 
-  const [searchTerm, setSearchTerm] = React.useState('');
+  // Fetch guidances on component mount
+  React.useEffect(() => {
+    const initializeData = async () => {
+      const currentSession = await getSession();
+      setSession(currentSession);
+      
+      if (currentSession?.status && currentSession?.data?.email) {
+        try {
+          const response = await fetch("/api/research-guidance");
+          const data = await response.json();
+          if (data.success) {
+            setGuidances(data.guidances);
+          }
+        } catch (error) {
+          console.error("Failed to fetch research guidances:", error);
+          toast.error("Failed to load research guidances");
+        }
+      }
+    };
 
-  const filteredGuidances = guidances.filter(guidance => {
-    if (filters.degree && guidance.degree !== filters.degree) return false;
-    if (filters.status && guidance.status !== filters.status) return false;
-    if (filters.year && guidance.year.toString() !== filters.year) return false;
-    return true;
-  });
+    initializeData();
+  }, []);
 
-  const searchedGuidances = guidances.filter(guidance =>
-    guidance.scholarName.toLowerCase().includes(searchTerm.toLowerCase())
-  );
-
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    // Handle form submission
+  const handleInputChange = (
+    e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>
+  ) => {
+    const { name, value } = e.target;
+    setFormData((prev) => ({
+      ...prev,
+      [name]: name.includes("Year") ? (value ? parseInt(value) : undefined) : value,
+    }));
   };
 
-  const handleDelete = async (id: number) => {
+  const handleSelectChange = (name: string, value: string) => {
+    setFormData((prev) => ({
+      ...prev,
+      [name]: value,
+    }));
+  };
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!session?.status || !session?.data?.email) {
+      toast.error("Please sign in to add research guidance");
+      return;
+    }
+
+    // Validate year
+    const currentYear = new Date().getFullYear();
+    if (formData.year < 1900 || formData.year > currentYear) {
+      toast.error("Invalid year");
+      return;
+    }
+
+    // Validate string lengths
+    if (formData.scholarName.length > 255) {
+      toast.error("Scholar name too long (max 255 characters)");
+      return;
+    }
+
+    if (formData.degree.length > 50) {
+      toast.error("Degree too long (max 50 characters)");
+      return;
+    }
+
+    if (formData.status.length > 50) {
+      toast.error("Status too long (max 50 characters)");
+      return;
+    }
+
+    setLoading(true);
     try {
-      // Add API call to delete the record
-      // await deleteGuidance(id);
-      setGuidances(guidances.filter(guidance => guidance.id !== id));
+      const response = await fetch("/api/research-guidance", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          userEmail: session.data.email,
+          ...formData,
+        }),
+      });
+
+      const data = await response.json();
+      if (data.success) {
+        setGuidances((prev) => [...prev, data.guidance]);
+        setFormData({
+          scholarName: "",
+          degree: "",
+          status: "",
+          year: new Date().getFullYear(),
+        });
+        toast.success("Research guidance added successfully");
+      } else {
+        throw new Error(data.message || "Failed to add research guidance");
+      }
     } catch (error) {
-      console.error('Failed to delete guidance record:', error);
+      console.error("Failed to add research guidance:", error);
+      toast.error("Failed to add research guidance");
+    } finally {
+      setLoading(false);
     }
   };
 
-  const exportData = () => {
-    const headers = ['Scholar Name', 'Degree', 'Status', 'Year'];
-    const data = guidances.map(g => [
-      g.scholarName,
-      g.degree,
-      g.status,
-      g.year.toString()
-    ]);
-    
-    const csv = [headers, ...data].map(row => row.join(',')).join('\n');
-    const blob = new Blob([csv], { type: 'text/csv' });
-    const url = window.URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = 'research-guidance.csv';
-    a.click();
+  const handleDelete = async (id: number) => {
+    if (!session?.status || !session?.data?.email) {
+      toast.error("Please sign in to delete research guidance");
+      return;
+    }
+
+    try {
+      const response = await fetch(`/api/research-guidance/${id}`, {
+        method: "DELETE",
+      });
+
+      const data = await response.json();
+      if (data.success) {
+        setGuidances(guidances.filter((guidance) => guidance.id !== id));
+        toast.success("Research guidance deleted successfully");
+      } else {
+        throw new Error(data.message || "Failed to delete research guidance");
+      }
+    } catch (error) {
+      console.error("Failed to delete research guidance:", error);
+      toast.error("Failed to delete research guidance");
+    }
   };
 
   return (
     <div className="container mx-auto p-6 space-y-6">
       <Card>
         <CardHeader>
-          <CardTitle>Add New Research Scholar</CardTitle>
+          <CardTitle>Add Research Guidance</CardTitle>
         </CardHeader>
         <CardContent>
           <form onSubmit={handleSubmit} className="space-y-4">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div className="space-y-2 md:col-span-2">
-                <Label htmlFor="scholar_name">Scholar Name</Label>
+              <div className="space-y-2">
+                <Label htmlFor="scholarName">Scholar Name</Label>
                 <Input
                   type="text"
-                  id="scholar_name"
-                  name="scholar_name"
-                  placeholder="Enter scholar's full name"
+                  id="scholarName"
+                  name="scholarName"
+                  value={formData.scholarName}
+                  onChange={handleInputChange}
+                  placeholder="Enter scholar name"
+                  maxLength={255}
                   required
                 />
               </div>
 
               <div className="space-y-2">
                 <Label htmlFor="degree">Degree</Label>
-                <Select name="degree" required>
+                <Select
+                  name="degree"
+                  value={formData.degree}
+                  onValueChange={(value) => handleSelectChange("degree", value)}
+                  required
+                >
                   <SelectTrigger>
                     <SelectValue placeholder="Select degree" />
                   </SelectTrigger>
                   <SelectContent>
-                    {Object.values(DegreeType).map((degree) => (
+                    {Object.values(Degree).map((degree) => (
                       <SelectItem key={degree} value={degree}>
                         {degree}
                       </SelectItem>
@@ -145,12 +230,17 @@ const ResearchGuidancePage = () => {
 
               <div className="space-y-2">
                 <Label htmlFor="status">Status</Label>
-                <Select name="status" required>
+                <Select
+                  name="status"
+                  value={formData.status}
+                  onValueChange={(value) => handleSelectChange("status", value)}
+                  required
+                >
                   <SelectTrigger>
                     <SelectValue placeholder="Select status" />
                   </SelectTrigger>
                   <SelectContent>
-                    {Object.values(ThesisStatus).map((status) => (
+                    {Object.values(GuidanceStatus).map((status) => (
                       <SelectItem key={status} value={status}>
                         {status}
                       </SelectItem>
@@ -161,27 +251,26 @@ const ResearchGuidancePage = () => {
 
               <div className="space-y-2">
                 <Label htmlFor="year">Year</Label>
-                <Select name="year" required>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Select year" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {yearOptions.map((year) => (
-                      <SelectItem key={year} value={year.toString()}>
-                        {year}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                <Input
+                  type="number"
+                  id="year"
+                  name="year"
+                  value={formData.year}
+                  onChange={handleInputChange}
+                  min={1900}
+                  max={new Date().getFullYear()}
+                  required
+                />
               </div>
             </div>
 
             <div className="flex justify-end pt-4">
-              <Button 
+              <Button
                 type="submit"
                 className="!bg-blue-500 text-white hover:!bg-blue-600"
+                disabled={loading}
               >
-                Add Scholar
+                {loading ? "Saving..." : "Add Guidance"}
               </Button>
             </div>
           </form>
@@ -190,7 +279,7 @@ const ResearchGuidancePage = () => {
 
       <Card>
         <CardHeader>
-          <CardTitle>Research Scholars List</CardTitle>
+          <CardTitle>Research Guidance List</CardTitle>
         </CardHeader>
         <CardContent>
           <div className="overflow-x-auto">
@@ -205,21 +294,13 @@ const ResearchGuidancePage = () => {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {filteredGuidances.map((guidance) => (
+                {guidances.map((guidance) => (
                   <TableRow key={guidance.id}>
-                    <TableCell>{guidance.scholarName}</TableCell>
-                    <TableCell>{guidance.degree}</TableCell>
-                    <TableCell>
-                      <span className={`px-2 py-1 rounded-full text-xs ${
-                        guidance.status === ThesisStatus.AWARDED
-                          ? "bg-green-100 text-green-800"
-                          : guidance.status === ThesisStatus.SUBMITTED
-                          ? "bg-yellow-100 text-yellow-800"
-                          : "bg-blue-100 text-blue-800"
-                      }`}>
-                        {guidance.status}
-                      </span>
+                    <TableCell className="font-medium">
+                      {guidance.scholarName}
                     </TableCell>
+                    <TableCell>{guidance.degree}</TableCell>
+                    <TableCell>{guidance.status}</TableCell>
                     <TableCell>{guidance.year}</TableCell>
                     <TableCell>
                       <Button
@@ -235,53 +316,6 @@ const ResearchGuidancePage = () => {
                 ))}
               </TableBody>
             </Table>
-
-            {/* Statistics Cards */}
-            <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mt-6">
-              <Card>
-                <CardContent className="pt-6">
-                  <div className="text-2xl font-bold">
-                    {guidances.length}
-                  </div>
-                  <div className="text-sm text-gray-500">
-                    Total Scholars
-                  </div>
-                </CardContent>
-              </Card>
-              
-              <Card>
-                <CardContent className="pt-6">
-                  <div className="text-2xl font-bold">
-                    {guidances.filter(g => g.status === ThesisStatus.AWARDED).length}
-                  </div>
-                  <div className="text-sm text-gray-500">
-                    Awarded
-                  </div>
-                </CardContent>
-              </Card>
-
-              <Card>
-                <CardContent className="pt-6">
-                  <div className="text-2xl font-bold">
-                    {guidances.filter(g => g.status === ThesisStatus.SUBMITTED).length}
-                  </div>
-                  <div className="text-sm text-gray-500">
-                    Submitted
-                  </div>
-                </CardContent>
-              </Card>
-
-              <Card>
-                <CardContent className="pt-6">
-                  <div className="text-2xl font-bold">
-                    {guidances.filter(g => g.status === ThesisStatus.ONGOING).length}
-                  </div>
-                  <div className="text-sm text-gray-500">
-                    Ongoing
-                  </div>
-                </CardContent>
-              </Card>
-            </div>
           </div>
         </CardContent>
       </Card>
