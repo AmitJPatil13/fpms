@@ -48,17 +48,14 @@ export const FacultyProfile = ({
   }
 
   return (
-    <Card className="w-full">
-      <CardHeader>
-        <CardTitle>Faculty Profile</CardTitle>
-        <CardDescription>Your profile information</CardDescription>
-      </CardHeader>
-      <CardContent>
-        {/* Profile content will go here when profile is completed */}
-        <div className="space-y-4">
-          <p>Profile content will be displayed here</p>
-        </div>
-      </CardContent>
-    </Card>
+    <button>
+      <Link href="/profile">
+        <Card className="w-full">
+          <CardHeader>
+            <CardTitle>Edit Profile</CardTitle>
+          </CardHeader>
+        </Card>
+      </Link>
+    </button>
   );
 };

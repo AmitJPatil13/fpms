@@ -179,7 +179,44 @@ const CertificationsPage = () => {
   };
 
   const viewCertificate = (certImg: string) => {
-    window.open(certImg, '_blank');
+    // Create a new window/tab with the base64 image
+    const newWindow = window.open();
+    if (newWindow) {
+      newWindow.document.write(`
+        <html>
+          <head>
+            <title>Certificate View</title>
+            <style>
+              body {
+                margin: 0;
+                display: flex;
+                justify-content: center;
+                align-items: center;
+                min-height: 100vh;
+                background: #f1f5f9;
+              }
+              img {
+                max-width: 95%;
+                max-height: 95vh;
+                object-fit: contain;
+                box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1);
+              }
+            </style>
+          </head>
+          <body>
+            <img src="${certImg}" alt="Certificate" />
+          </body>
+        </html>
+      `);
+    } else {
+      // Fallback if popup is blocked
+      const image = new Image();
+      image.src = certImg;
+      const tab = window.open(image.src, '_blank');
+      if (!tab) {
+        toast.error('Please allow popups to view the certificate');
+      }
+    }
   };
 
   return (

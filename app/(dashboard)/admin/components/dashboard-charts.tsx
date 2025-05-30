@@ -156,7 +156,7 @@ export function DashboardCharts({
           </CardContent>
         </Card>
       </div>
-
+{/* 
       <Card className="hover:shadow-lg transition-shadow">
         <CardHeader>
           <CardTitle className="text-lg font-semibold text-slate-800">Research Publication Types</CardTitle>
@@ -214,7 +214,7 @@ export function DashboardCharts({
             </ResponsiveContainer>
           </div>
         </CardContent>
-      </Card>
+      </Card> */}
     </>
   );
 } 

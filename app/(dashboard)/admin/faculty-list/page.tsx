@@ -30,6 +30,9 @@ export default function FacultyListPage() {
         const { data, error } = await getFacultyList();
         if (error) {
           setError(error);
+          if (error === 'Unauthorized') {
+            router.push('/login');
+          }
         } else {
           setFacultyList(data || []);
         }
@@ -41,7 +44,7 @@ export default function FacultyListPage() {
     };
 
     loadFacultyList();
-  }, []);
+  }, [router]);
 
   const filteredFaculty = React.useMemo(() => {
     if (!searchQuery) return facultyList;
@@ -53,7 +56,7 @@ export default function FacultyListPage() {
     );
   }, [facultyList, searchQuery]);
 
-  if (error) {
+  if (error && error !== 'Unauthorized') {
     return (
       <div className="p-6">
         <div className="bg-destructive/10 text-destructive p-4 rounded-lg border border-destructive/20">
@@ -79,13 +82,13 @@ export default function FacultyListPage() {
 
   return (
     <div className="p-6 space-y-6">
-      <div className="flex items-center justify-between">
+      {/* <div className="flex items-center justify-between">
         <h1 className="text-3xl font-bold tracking-tight">Faculty List</h1>
         <Button onClick={() => router.push('/admin/faculty-list/new')}>
           <Plus className="mr-2 h-4 w-4" />
           Add Faculty
         </Button>
-      </div>
+      </div> */}
 
       <div className="flex items-center space-x-2 max-w-sm">
         <Search className="h-4 w-4 text-muted-foreground" />
